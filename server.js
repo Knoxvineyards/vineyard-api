@@ -23,23 +23,46 @@ app.use((req, res, next) => {
 });
 
 // Ecowitt Cloud API Configuration
-const ECOWITT_API_KEY = '3087108a-2614-44dd-b4dd-fce48e6c3c58';
+const ECOWITT_API_KEY = '8e74fa3e-a99c-4d76-b120-01d8fbb07169';
 const ECOWITT_APPLICATION_KEY = '42E6BEB0769C1ACCB32E82787D13A78B'; // Your personal app key
 const ECOWITT_MAC = '48:CA:43:E1:E5:08';
 
 // Function to fetch data from Ecowitt API
 async function fetchEcowittData() {
   try {
-    // Try the simpler API endpoint first
-    const url = `https://api.ecowitt.net/api/v3/device/real_time?application_key=${ECOWITT_APPLICATION_KEY}&api_key=${ECOWITT_API_KEY}&mac=${ECOWITT_MAC.replace(/:/g, '')}&call_back=all`;
+    // Try different MAC format variations
+    const macNoColons = ECOWITT_MAC.replace(/:/g, '');
+    const macUpperCase = ECOWITT_MAC.toUpperCase();
+    const macLowerCase = ECOWITT_MAC.toLowerCase();
+    
+    // Try the API call with MAC without colons first
+    let url = `https://api.ecowitt.net/api/v3/device/real_time?application_key=${ECOWITT_APPLICATION_KEY}&api_key=${ECOWITT_API_KEY}&mac=${macNoColons}&call_back=all`;
     
     console.log('🌐 Fetching data from Ecowitt cloud...');
-    console.log('URL:', url);
+    console.log('Trying MAC format:', macNoColons);
     
-    const response = await fetch(url);
-    const data = await response.json();
+    let response = await fetch(url);
+    let data = await response.json();
     
     console.log('Response:', JSON.stringify(data, null, 2));
+    
+    // If failed, try with colons uppercase
+    if (data.code !== 0) {
+      console.log('Trying MAC format with colons (uppercase):', macUpperCase);
+      url = `https://api.ecowitt.net/api/v3/device/real_time?application_key=${ECOWITT_APPLICATION_KEY}&api_key=${ECOWITT_API_KEY}&mac=${macUpperCase}&call_back=all`;
+      response = await fetch(url);
+      data = await response.json();
+      console.log('Response:', JSON.stringify(data, null, 2));
+    }
+    
+    // If still failed, try lowercase with colons
+    if (data.code !== 0) {
+      console.log('Trying MAC format with colons (lowercase):', macLowerCase);
+      url = `https://api.ecowitt.net/api/v3/device/real_time?application_key=${ECOWITT_APPLICATION_KEY}&api_key=${ECOWITT_API_KEY}&mac=${macLowerCase}&call_back=all`;
+      response = await fetch(url);
+      data = await response.json();
+      console.log('Response:', JSON.stringify(data, null, 2));
+    }
     
     if (data.code === 0 && data.data) {
       console.log('✅ Received Ecowitt cloud data');
