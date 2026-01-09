@@ -1,7 +1,7 @@
 // Ecowitt Vineyard Environmental Monitoring API
 // Optimized for GW1200B Gateway with WH51L and WN35 sensors
 // Deploy to Render.com
-// V6
+// v7
 
 const express = require('express');
 const cors = require('cors');
@@ -96,6 +96,19 @@ app.get('/', (req, res) => {
       debug: 'GET /api/debug'
     }
   });
+});
+
+// Catch-all for debugging - put this BEFORE other routes
+app.all('*', (req, res, next) => {
+  if (!req.path.includes('/api/') && 
+      !req.path.includes('/weatherstation/') && 
+      req.path !== '/' &&
+      !req.path.includes('favicon')) {
+    console.log('🔍 UNKNOWN PATH HIT:', req.method, req.path);
+    console.log('Query:', JSON.stringify(req.query));
+    console.log('Body:', JSON.stringify(req.body));
+  }
+  next();
 });
 
 // Test endpoint - captures everything
