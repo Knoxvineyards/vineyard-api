@@ -1,7 +1,7 @@
 // Ecowitt Vineyard Environmental Monitoring API
 // Optimized for GW1200B Gateway with WH51L and WN35 sensors
 // Deploy to Render.com
-// V8
+//v9
 
 const express = require('express');
 const cors = require('cors');
@@ -98,18 +98,56 @@ app.get('/', (req, res) => {
   });
 });
 
-// Catch-all for debugging - put this BEFORE other routes
-app.all('*', (req, res, next) => {
-  if (!req.path.includes('/api/') && 
-      !req.path.includes('/weatherstation/') && 
-      req.path !== '/' &&
-      !req.path.includes('favicon')) {
-    console.log('🔍 UNKNOWN PATH HIT:', req.method, req.path);
-    console.log('Query:', JSON.stringify(req.query));
-    console.log('Body:', JSON.stringify(req.body));
+// Universal catch-all for ANY POST/GET that might be weather data
+app.all('/*', (req, res, next) => {
+  // Skip known static/system paths
+  if (req.path.includes('favicon') || 
+      req.path.includes('.js') || 
+      req.path.includes('.css') ||
+      req.path === '/') {
+    return next();
   }
-  next();
+  
+  console.log('================================');
+  console.log('🌐 REQUEST RECEIVED:');
+  console.log('Path:', req.path);
+  console.log('Method:', req.method);
+  console.log('Query params:', JSON.stringify(req.query, null, 2));
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('================================');
+  
+  // Try to parse any data
+  const data = req.method === 'GET' ? req.query : req.body;
+  
+  if (Object.keys(data).length > 0) {
+    lastRawData = {
+      timestamp: new Date().toISOString(),
+      path: req.path,
+      data: data
+    };
+    
+    const parsed = parseEcowittData(data);
+    
+    if (parsed.temperature !== undefined || 
+        parsed.soilMoisture1 !== null || 
+        parsed.soilMoisture2 !== null || 
+        parsed.leafWetness !== null) {
+      
+      sensorData.push(parsed);
+      
+      if (sensorData.length > MAX_READINGS) {
+        sensorData.shift();
+      }
+      
+      console.log('✅✅✅ SENSOR DATA STORED! ✅✅✅');
+    }
+  }
+  
+  res.status(200).send('success\n');
 });
+
+// Catch-all for debugging - put this BEFORE other routes
 
 // Ecowitt alternative paths
 app.all('/data/report', (req, res) => {
