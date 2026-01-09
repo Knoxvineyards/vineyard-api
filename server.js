@@ -24,7 +24,7 @@ app.use((req, res, next) => {
 
 // Ecowitt Cloud API Configuration
 const ECOWITT_API_KEY = '3087108a-2614-44dd-b4dd-fce48e6c3c58';
-const ECOWITT_APPLICATION_KEY = '28DE95AFF16E4265BCF654EF06AE0F2F'; // Alternative app key
+const ECOWITT_APPLICATION_KEY = '42E6BEB0769C1ACCB32E82787D13A78B'; // Your personal app key
 const ECOWITT_MAC = '48:CA:43:E1:E5:08';
 
 // Function to fetch data from Ecowitt API
