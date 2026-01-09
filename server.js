@@ -1,10 +1,11 @@
 // Ecowitt Vineyard Environmental Monitoring API
 // Optimized for GW1200B Gateway with WH51L and WN35 sensors
 // Deploy to Render.com
-//v9
+//v11
 
 const express = require('express');
 const cors = require('cors');
+const fetch = require('node-fetch');
 const app = express();
 
 // Middleware
@@ -21,6 +22,115 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+// Ecowitt Cloud API Configuration
+const ECOWITT_API_KEY = '3087108a-2614-44dd-b4dd-fce48e6c3c58';
+const ECOWITT_APPLICATION_KEY = '0A96080471D34C59BCA41F5030F4E40F'; // Standard Ecowitt app key
+const ECOWITT_MAC = '48:CA:43:E1:E5:08';
+
+// Function to fetch data from Ecowitt API
+async function fetchEcowittData() {
+  try {
+    const url = `https://api.ecowitt.net/api/v3/device/real_time?application_key=${ECOWITT_APPLICATION_KEY}&api_key=${ECOWITT_API_KEY}&mac=${ECOWITT_MAC}&call_back=all`;
+    
+    console.log('🌐 Fetching data from Ecowitt cloud...');
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.code === 0 && data.data) {
+      console.log('✅ Received Ecowitt cloud data:', JSON.stringify(data.data, null, 2));
+      
+      lastRawData = {
+        timestamp: new Date().toISOString(),
+        source: 'ecowitt-cloud',
+        data: data.data
+      };
+      
+      // Parse Ecowitt cloud format
+      const parsed = parseEcowittCloudData(data.data);
+      
+      if (parsed.temperature !== undefined || 
+          parsed.soilMoisture1 !== null || 
+          parsed.soilMoisture2 !== null || 
+          parsed.leafWetness !== null) {
+        
+        sensorData.push(parsed);
+        
+        if (sensorData.length > MAX_READINGS) {
+          sensorData.shift();
+        }
+        
+        console.log('💾 Stored reading from Ecowitt cloud:', {
+          temp: parsed.temperature,
+          soil1: parsed.soilMoisture1,
+          soil2: parsed.soilMoisture2,
+          leafWetness: parsed.leafWetness
+        });
+      }
+    } else {
+      console.error('❌ Ecowitt API error:', data.msg || 'Unknown error');
+    }
+  } catch (error) {
+    console.error('❌ Error fetching from Ecowitt:', error.message);
+  }
+}
+
+// Parse Ecowitt cloud data format
+function parseEcowittCloudData(data) {
+  const parsed = {
+    timestamp: new Date().toISOString(),
+    raw: data
+  };
+
+  // Ecowitt cloud sends data in different structure
+  if (data.outdoor) {
+    // Temperature in Celsius
+    if (data.outdoor.temperature) {
+      parsed.temperature = parseFloat(data.outdoor.temperature.value);
+    }
+    // Humidity
+    if (data.outdoor.humidity) {
+      parsed.humidity = parseFloat(data.outdoor.humidity.value);
+    }
+  }
+
+  // Indoor sensors
+  if (data.indoor) {
+    if (!parsed.temperature && data.indoor.temperature) {
+      parsed.temperature = parseFloat(data.indoor.temperature.value);
+    }
+    if (!parsed.humidity && data.indoor.humidity) {
+      parsed.humidity = parseFloat(data.indoor.humidity.value);
+    }
+  }
+
+  // Soil moisture sensors
+  if (data.soil_ch && Array.isArray(data.soil_ch)) {
+    data.soil_ch.forEach((sensor, index) => {
+      if (index === 0 && sensor.humidity) {
+        parsed.soilMoisture1 = parseFloat(sensor.humidity.value);
+      }
+      if (index === 1 && sensor.humidity) {
+        parsed.soilMoisture2 = parseFloat(sensor.humidity.value);
+      }
+    });
+  }
+
+  // Leaf wetness
+  if (data.leaf_ch && Array.isArray(data.leaf_ch)) {
+    if (data.leaf_ch[0] && data.leaf_ch[0].humidity) {
+      parsed.leafWetness = parseFloat(data.leaf_ch[0].humidity.value);
+    }
+  }
+
+  return parsed;
+}
+
+// Start fetching from Ecowitt cloud every 60 seconds
+setInterval(fetchEcowittData, 60000);
+// Fetch immediately on startup
+setTimeout(fetchEcowittData, 5000); // Wait 5 seconds after server starts
 
 // In-memory data storage
 const sensorData = [];
