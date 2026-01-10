@@ -1,6 +1,6 @@
 // Knox Vineyards Environmental Monitoring API
 // Pulls data from Ecowitt Cloud
-//v22
+//v23
 
 const express = require('express');
 const cors = require('cors');
@@ -98,7 +98,8 @@ function parseEcowittCloudData(data) {
 
   if (data.indoor) {
     if (data.indoor.temperature && data.indoor.temperature.value) {
-      parsed.temperature = parseFloat((((parseFloat(data.indoor.temperature.value) - 32) * 5/9)).toFixed(1));
+      // Temperature is already in Fahrenheit from Ecowitt - keep it
+      parsed.temperature = parseFloat(parseFloat(data.indoor.temperature.value).toFixed(1));
     }
     if (data.indoor.humidity && data.indoor.humidity.value) {
       parsed.humidity = parseFloat(data.indoor.humidity.value);
@@ -107,7 +108,8 @@ function parseEcowittCloudData(data) {
 
   if (data.outdoor) {
     if (data.outdoor.temperature && data.outdoor.temperature.value) {
-      parsed.temperature = parseFloat((((parseFloat(data.outdoor.temperature.value) - 32) * 5/9)).toFixed(1));
+      // Temperature is already in Fahrenheit from Ecowitt - keep it
+      parsed.temperature = parseFloat(parseFloat(data.outdoor.temperature.value).toFixed(1));
     }
     if (data.outdoor.humidity && data.outdoor.humidity.value) {
       parsed.humidity = parseFloat(data.outdoor.humidity.value);
