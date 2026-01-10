@@ -1,6 +1,5 @@
 // Knox Vineyards Environmental Monitoring API
 // Pulls data from Ecowitt Cloud
-//v23
 
 const express = require('express');
 const cors = require('cors');
@@ -321,6 +320,88 @@ app.get('/api/alerts', (req, res) => {
     ),
     timestamp: latest.timestamp
   });
+});
+
+app.get('/api/insights', async (req, res) => {
+  try {
+    if (sensorData.length < 10) {
+      return res.json({
+        success: true,
+        insights: 'Need more data for insights. Collecting readings... Check back in a few minutes.'
+      });
+    }
+
+    const latest = sensorData[sensorData.length - 1];
+    const recentData = sensorData.slice(-50);
+    const temps = recentData.map(d => d.temperature).filter(v => v);
+    const soil1 = recentData.map(d => d.soilMoisture1).filter(v => v);
+    const soil2 = recentData.map(d => d.soilMoisture2).filter(v => v);
+    const leaf = recentData.map(d => d.leafWetness).filter(v => v);
+
+    const stats = {
+      tempAvg: temps.reduce((a, b) => a + b, 0) / temps.length,
+      tempTrend: temps[temps.length - 1] - temps[0],
+      soil1Avg: soil1.reduce((a, b) => a + b, 0) / soil1.length,
+      soil1Trend: soil1[soil1.length - 1] - soil1[0],
+      soil2Avg: soil2.reduce((a, b) => a + b, 0) / soil2.length,
+      soil2Trend: soil2[soil2.length - 1] - soil2[0],
+      leafAvg: leaf.reduce((a, b) => a + b, 0) / leaf.length,
+      highLeafCount: leaf.filter(v => v > 70).length
+    };
+
+    const alertsList = await fetch(`${req.protocol}://${req.get('host')}/api/alerts`).then(r => r.json());
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1500,
+        messages: [{
+          role: "user",
+          content: `You are an expert viticulturist analyzing Knox Vineyards sensor data. Provide actionable insights.
+
+Current Conditions:
+- Temperature: ${latest.temperature?.toFixed(1)}°F
+- Soil Moisture #1: ${latest.soilMoisture1?.toFixed(1)}%
+- Soil Moisture #2: ${latest.soilMoisture2?.toFixed(1)}%
+- Leaf Wetness: ${latest.leafWetness?.toFixed(1)}%
+
+Recent Trends (last ${recentData.length} readings):
+- Avg Temperature: ${stats.tempAvg.toFixed(1)}°F (${stats.tempTrend > 0 ? '+' : ''}${stats.tempTrend.toFixed(1)}°F trend)
+- Avg Soil #1: ${stats.soil1Avg.toFixed(1)}% (${stats.soil1Trend > 0 ? '+' : ''}${stats.soil1Trend.toFixed(1)}% trend)
+- Avg Soil #2: ${stats.soil2Avg.toFixed(1)}% (${stats.soil2Trend > 0 ? '+' : ''}${stats.soil2Trend.toFixed(1)}% trend)
+- Avg Leaf Wetness: ${stats.leafAvg.toFixed(1)}% (${stats.highLeafCount} high readings)
+
+Active Alerts: ${alertsList.alerts?.length > 0 ? alertsList.alerts.map(a => a.message).join('; ') : 'None'}
+
+Provide:
+1. Current conditions assessment
+2. Key trends and what they mean
+3. Disease risk evaluation (especially fungal diseases)
+4. Irrigation recommendations
+5. Action items for next 24-48 hours
+6. Any concerning patterns
+
+Be specific and actionable. Focus on premium wine grape production.`
+        }]
+      })
+    });
+
+    const data = await response.json();
+    const insights = data.content.filter(i => i.type === 'text').map(i => i.text).join('\n');
+    
+    res.json({
+      success: true,
+      insights: insights
+    });
+  } catch (error) {
+    console.error('AI insights error:', error);
+    res.json({
+      success: false,
+      insights: `AI analysis temporarily unavailable: ${error.message}`
+    });
+  }
 });
 
 app.get('/api/debug', (req, res) => {
