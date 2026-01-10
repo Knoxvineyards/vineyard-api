@@ -1,6 +1,6 @@
 // Knox Vineyards Environmental Monitoring API
 // Pulls data from Ecowitt Cloud
-//21
+//v22
 
 const express = require('express');
 const cors = require('cors');
@@ -98,7 +98,7 @@ function parseEcowittCloudData(data) {
 
   if (data.indoor) {
     if (data.indoor.temperature && data.indoor.temperature.value) {
-      parsed.temperature = ((parseFloat(data.indoor.temperature.value) - 32) * 5/9);
+      parsed.temperature = parseFloat((((parseFloat(data.indoor.temperature.value) - 32) * 5/9)).toFixed(1));
     }
     if (data.indoor.humidity && data.indoor.humidity.value) {
       parsed.humidity = parseFloat(data.indoor.humidity.value);
@@ -107,7 +107,7 @@ function parseEcowittCloudData(data) {
 
   if (data.outdoor) {
     if (data.outdoor.temperature && data.outdoor.temperature.value) {
-      parsed.temperature = ((parseFloat(data.outdoor.temperature.value) - 32) * 5/9);
+      parsed.temperature = parseFloat((((parseFloat(data.outdoor.temperature.value) - 32) * 5/9)).toFixed(1));
     }
     if (data.outdoor.humidity && data.outdoor.humidity.value) {
       parsed.humidity = parseFloat(data.outdoor.humidity.value);
@@ -115,15 +115,15 @@ function parseEcowittCloudData(data) {
   }
 
   if (data.soil_ch1 && data.soil_ch1.soilmoisture && data.soil_ch1.soilmoisture.value) {
-    parsed.soilMoisture1 = parseFloat(data.soil_ch1.soilmoisture.value);
+    parsed.soilMoisture1 = parseFloat(parseFloat(data.soil_ch1.soilmoisture.value).toFixed(1));
   }
   
   if (data.soil_ch2 && data.soil_ch2.soilmoisture && data.soil_ch2.soilmoisture.value) {
-    parsed.soilMoisture2 = parseFloat(data.soil_ch2.soilmoisture.value);
+    parsed.soilMoisture2 = parseFloat(parseFloat(data.soil_ch2.soilmoisture.value).toFixed(1));
   }
 
   if (data.leaf_ch1 && data.leaf_ch1.leaf_wetness && data.leaf_ch1.leaf_wetness.value) {
-    parsed.leafWetness = parseFloat(data.leaf_ch1.leaf_wetness.value);
+    parsed.leafWetness = parseFloat(parseFloat(data.leaf_ch1.leaf_wetness.value).toFixed(1));
   }
 
   return parsed;
