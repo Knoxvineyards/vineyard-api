@@ -1,7 +1,7 @@
 // Ecowitt Vineyard Environmental Monitoring API
 // Optimized for GW1200B Gateway with WH51L and WN35 sensors
 // Deploy to Render.com
-//17
+//v18
 
 const express = require('express');
 const cors = require('cors');
@@ -111,45 +111,39 @@ function parseEcowittCloudData(data) {
     raw: data
   };
 
-  // Ecowitt cloud sends data in different structure
-  if (data.outdoor) {
-    // Temperature in Celsius
-    if (data.outdoor.temperature) {
-      parsed.temperature = parseFloat(data.outdoor.temperature.value);
-    }
-    // Humidity
-    if (data.outdoor.humidity) {
-      parsed.humidity = parseFloat(data.outdoor.humidity.value);
-    }
-  }
-
-  // Indoor sensors
+  // Indoor temperature and humidity
   if (data.indoor) {
-    if (!parsed.temperature && data.indoor.temperature) {
-      parsed.temperature = parseFloat(data.indoor.temperature.value);
+    if (data.indoor.temperature && data.indoor.temperature.value) {
+      // Convert Fahrenheit to Celsius
+      parsed.temperature = ((parseFloat(data.indoor.temperature.value) - 32) * 5/9);
     }
-    if (!parsed.humidity && data.indoor.humidity) {
+    if (data.indoor.humidity && data.indoor.humidity.value) {
       parsed.humidity = parseFloat(data.indoor.humidity.value);
     }
   }
 
-  // Soil moisture sensors
-  if (data.soil_ch && Array.isArray(data.soil_ch)) {
-    data.soil_ch.forEach((sensor, index) => {
-      if (index === 0 && sensor.humidity) {
-        parsed.soilMoisture1 = parseFloat(sensor.humidity.value);
-      }
-      if (index === 1 && sensor.humidity) {
-        parsed.soilMoisture2 = parseFloat(sensor.humidity.value);
-      }
-    });
+  // Outdoor sensors (if available)
+  if (data.outdoor) {
+    if (data.outdoor.temperature && data.outdoor.temperature.value) {
+      parsed.temperature = ((parseFloat(data.outdoor.temperature.value) - 32) * 5/9);
+    }
+    if (data.outdoor.humidity && data.outdoor.humidity.value) {
+      parsed.humidity = parseFloat(data.outdoor.humidity.value);
+    }
   }
 
-  // Leaf wetness
-  if (data.leaf_ch && Array.isArray(data.leaf_ch)) {
-    if (data.leaf_ch[0] && data.leaf_ch[0].humidity) {
-      parsed.leafWetness = parseFloat(data.leaf_ch[0].humidity.value);
-    }
+  // Soil moisture sensors - NEW STRUCTURE
+  if (data.soil_ch1 && data.soil_ch1.soilmoisture && data.soil_ch1.soilmoisture.value) {
+    parsed.soilMoisture1 = parseFloat(data.soil_ch1.soilmoisture.value);
+  }
+  
+  if (data.soil_ch2 && data.soil_ch2.soilmoisture && data.soil_ch2.soilmoisture.value) {
+    parsed.soilMoisture2 = parseFloat(data.soil_ch2.soilmoisture.value);
+  }
+
+  // Leaf wetness - NEW STRUCTURE
+  if (data.leaf_ch1 && data.leaf_ch1.leaf_wetness && data.leaf_ch1.leaf_wetness.value) {
+    parsed.leafWetness = parseFloat(data.leaf_ch1.leaf_wetness.value);
   }
 
   return parsed;
