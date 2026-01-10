@@ -1,7 +1,7 @@
 // Ecowitt Vineyard Environmental Monitoring API
 // Optimized for GW1200B Gateway with WH51L and WN35 sensors
 // Deploy to Render.com
-//v18
+//v20
 
 const express = require('express');
 const cors = require('cors');
