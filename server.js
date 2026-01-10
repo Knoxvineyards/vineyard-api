@@ -1,7 +1,6 @@
-// Ecowitt Vineyard Environmental Monitoring API
-// Optimized for GW1200B Gateway with WH51L and WN35 sensors
-// Deploy to Render.com
-//v20
+// Knox Vineyards Environmental Monitoring API
+// Pulls data from Ecowitt Cloud
+//21
 
 const express = require('express');
 const cors = require('cors');
@@ -10,64 +9,51 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: '*', // Allow all origins for now
+  origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // Ecowitt sends form data
-
-// Add request logging
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
+app.use(express.urlencoded({ extended: true }));
 
 // Ecowitt Cloud API Configuration
 const ECOWITT_API_KEY = '8e74fa3e-a99c-4d76-b120-01d8fbb07169';
-const ECOWITT_APPLICATION_KEY = '42E6BEB0769C1ACCB32E82787D13A78B'; // Your personal app key
+const ECOWITT_APPLICATION_KEY = '42E6BEB0769C1ACCB32E82787D13A78B';
 const ECOWITT_MAC = '48:CA:43:E1:E5:08';
+
+// In-memory data storage
+const sensorData = [];
+const MAX_READINGS = 10000;
+let lastRawData = null;
 
 // Function to fetch data from Ecowitt API
 async function fetchEcowittData() {
   try {
-    // Try different MAC format variations
     const macNoColons = ECOWITT_MAC.replace(/:/g, '');
     const macUpperCase = ECOWITT_MAC.toUpperCase();
     const macLowerCase = ECOWITT_MAC.toLowerCase();
     
-    // Try the API call with MAC without colons first
     let url = `https://api.ecowitt.net/api/v3/device/real_time?application_key=${ECOWITT_APPLICATION_KEY}&api_key=${ECOWITT_API_KEY}&mac=${macNoColons}&call_back=all`;
     
     console.log('🌐 Fetching data from Ecowitt cloud...');
-    console.log('Trying MAC format:', macNoColons);
     
     let response = await fetch(url);
     let data = await response.json();
     
-    console.log('Response:', JSON.stringify(data, null, 2));
-    
-    // If failed, try with colons uppercase
     if (data.code !== 0) {
-      console.log('Trying MAC format with colons (uppercase):', macUpperCase);
       url = `https://api.ecowitt.net/api/v3/device/real_time?application_key=${ECOWITT_APPLICATION_KEY}&api_key=${ECOWITT_API_KEY}&mac=${macUpperCase}&call_back=all`;
       response = await fetch(url);
       data = await response.json();
-      console.log('Response:', JSON.stringify(data, null, 2));
     }
     
-    // If still failed, try lowercase with colons
     if (data.code !== 0) {
-      console.log('Trying MAC format with colons (lowercase):', macLowerCase);
       url = `https://api.ecowitt.net/api/v3/device/real_time?application_key=${ECOWITT_APPLICATION_KEY}&api_key=${ECOWITT_API_KEY}&mac=${macLowerCase}&call_back=all`;
       response = await fetch(url);
       data = await response.json();
-      console.log('Response:', JSON.stringify(data, null, 2));
     }
     
     if (data.code === 0 && data.data) {
       console.log('✅ Received Ecowitt cloud data');
-      console.log('📊 Full data structure:', JSON.stringify(data.data, null, 2));
       
       lastRawData = {
         timestamp: new Date().toISOString(),
@@ -75,7 +61,6 @@ async function fetchEcowittData() {
         data: data.data
       };
       
-      // Parse Ecowitt cloud format
       const parsed = parseEcowittCloudData(data.data);
       
       if (parsed.temperature !== undefined || 
@@ -111,10 +96,8 @@ function parseEcowittCloudData(data) {
     raw: data
   };
 
-  // Indoor temperature and humidity
   if (data.indoor) {
     if (data.indoor.temperature && data.indoor.temperature.value) {
-      // Convert Fahrenheit to Celsius
       parsed.temperature = ((parseFloat(data.indoor.temperature.value) - 32) * 5/9);
     }
     if (data.indoor.humidity && data.indoor.humidity.value) {
@@ -122,7 +105,6 @@ function parseEcowittCloudData(data) {
     }
   }
 
-  // Outdoor sensors (if available)
   if (data.outdoor) {
     if (data.outdoor.temperature && data.outdoor.temperature.value) {
       parsed.temperature = ((parseFloat(data.outdoor.temperature.value) - 32) * 5/9);
@@ -132,7 +114,6 @@ function parseEcowittCloudData(data) {
     }
   }
 
-  // Soil moisture sensors - NEW STRUCTURE
   if (data.soil_ch1 && data.soil_ch1.soilmoisture && data.soil_ch1.soilmoisture.value) {
     parsed.soilMoisture1 = parseFloat(data.soil_ch1.soilmoisture.value);
   }
@@ -141,7 +122,6 @@ function parseEcowittCloudData(data) {
     parsed.soilMoisture2 = parseFloat(data.soil_ch2.soilmoisture.value);
   }
 
-  // Leaf wetness - NEW STRUCTURE
   if (data.leaf_ch1 && data.leaf_ch1.leaf_wetness && data.leaf_ch1.leaf_wetness.value) {
     parsed.leafWetness = parseFloat(data.leaf_ch1.leaf_wetness.value);
   }
@@ -149,290 +129,54 @@ function parseEcowittCloudData(data) {
   return parsed;
 }
 
-// Start fetching from Ecowitt cloud every 60 seconds
+// Start fetching from Ecowitt cloud
 setInterval(fetchEcowittData, 60000);
-// Fetch immediately on startup
-setTimeout(fetchEcowittData, 5000); // Wait 5 seconds after server starts
+setTimeout(fetchEcowittData, 5000);
 
-// In-memory data storage
-const sensorData = [];
-const MAX_READINGS = 10000;
-
-// Store last received raw data for debugging
-let lastRawData = null;
-
-// Parse Ecowitt/Wunderground data format
-function parseEcowittData(data) {
-  const parsed = {
-    timestamp: new Date().toISOString(),
-    raw: data
+// Helper function for statistics
+function calculateStats(values) {
+  if (values.length === 0) return null;
+  
+  const sorted = values.sort((a, b) => a - b);
+  const sum = values.reduce((a, b) => a + b, 0);
+  
+  return {
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+    avg: sum / values.length,
+    median: sorted[Math.floor(sorted.length / 2)],
+    count: values.length
   };
-
-  // Temperature - try multiple field names
-  // Ecowitt sends temp in Fahrenheit, convert to Celsius
-  if (data.tempf) {
-    parsed.temperature = ((parseFloat(data.tempf) - 32) * 5/9);
-  } else if (data.temp1f) {
-    parsed.temperature = ((parseFloat(data.temp1f) - 32) * 5/9);
-  } else if (data.tempinf) {
-    parsed.temperature = ((parseFloat(data.tempinf) - 32) * 5/9);
-  } else if (data.temp) {
-    // Some send in Celsius directly
-    parsed.temperature = parseFloat(data.temp);
-  }
-
-  // Humidity
-  if (data.humidity) {
-    parsed.humidity = parseFloat(data.humidity);
-  } else if (data.humidity1) {
-    parsed.humidity = parseFloat(data.humidity1);
-  } else if (data.humidityin) {
-    parsed.humidity = parseFloat(data.humidityin);
-  }
-
-  // Soil Moisture Sensors - try multiple field names
-  parsed.soilMoisture1 = data.soilmoisture1 ? parseFloat(data.soilmoisture1) : 
-                          data.soilhum1 ? parseFloat(data.soilhum1) : null;
-  parsed.soilMoisture2 = data.soilmoisture2 ? parseFloat(data.soilmoisture2) : 
-                          data.soilhum2 ? parseFloat(data.soilhum2) : null;
-
-  // Leaf Wetness - try multiple field names
-  parsed.leafWetness = data.leafwetness_ch1 ? parseFloat(data.leafwetness_ch1) : 
-                       data.leafwetness1 ? parseFloat(data.leafwetness1) :
-                       data.leafwet_ch1 ? parseFloat(data.leafwet_ch1) : null;
-
-  // Additional useful fields
-  parsed.stationtype = data.stationtype || 'Unknown';
-  parsed.passkey = data.PASSKEY || data.passkey || data.ID || 'Unknown';
-  parsed.dateutc = data.dateutc;
-
-  return parsed;
 }
 
 // Routes
 
-// Health check
 app.get('/', (req, res) => {
   res.json({
-    service: 'Ecowitt Vineyard Monitoring API',
+    service: 'Knox Vineyards Sensor API',
     status: 'healthy',
     timestamp: new Date().toISOString(),
     totalReadings: sensorData.length,
     lastUpdate: sensorData.length > 0 ? sensorData[sensorData.length - 1].timestamp : null,
     endpoints: {
       health: 'GET /',
-      ecowittWebhook: 'POST /api/ecowitt',
       latestData: 'GET /api/data/latest',
       history: 'GET /api/data/history',
       stats: 'GET /api/data/stats',
+      alerts: 'GET /api/alerts',
       debug: 'GET /api/debug'
     }
   });
 });
 
-// Universal catch-all for ANY POST/GET that might be weather data
-app.all('/*', (req, res, next) => {
-  // Skip known static/system paths
-  if (req.path.includes('favicon') || 
-      req.path.includes('.js') || 
-      req.path.includes('.css') ||
-      req.path === '/') {
-    return next();
-  }
-  
-  console.log('================================');
-  console.log('🌐 REQUEST RECEIVED:');
-  console.log('Path:', req.path);
-  console.log('Method:', req.method);
-  console.log('Query params:', JSON.stringify(req.query, null, 2));
-  console.log('Body:', JSON.stringify(req.body, null, 2));
-  console.log('Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('================================');
-  
-  // Try to parse any data
-  const data = req.method === 'GET' ? req.query : req.body;
-  
-  if (Object.keys(data).length > 0) {
-    lastRawData = {
-      timestamp: new Date().toISOString(),
-      path: req.path,
-      data: data
-    };
-    
-    const parsed = parseEcowittData(data);
-    
-    if (parsed.temperature !== undefined || 
-        parsed.soilMoisture1 !== null || 
-        parsed.soilMoisture2 !== null || 
-        parsed.leafWetness !== null) {
-      
-      sensorData.push(parsed);
-      
-      if (sensorData.length > MAX_READINGS) {
-        sensorData.shift();
-      }
-      
-      console.log('✅✅✅ SENSOR DATA STORED! ✅✅✅');
-    }
-  }
-  
-  res.status(200).send('success\n');
-});
-
-// Catch-all for debugging - put this BEFORE other routes
-
-// Ecowitt alternative paths
-app.all('/data/report', (req, res) => {
-  console.log('📡 /data/report endpoint hit!');
-  console.log('Method:', req.method);
-  console.log('Query:', JSON.stringify(req.query));
-  console.log('Body:', JSON.stringify(req.body));
-  
-  lastRawData = {
-    timestamp: new Date().toISOString(),
-    data: req.method === 'GET' ? req.query : req.body
-  };
-  
-  const parsed = parseEcowittData(req.method === 'GET' ? req.query : req.body);
-  
-  if (parsed.temperature !== undefined || 
-      parsed.soilMoisture1 !== null || 
-      parsed.soilMoisture2 !== null || 
-      parsed.leafWetness !== null) {
-    
-    sensorData.push(parsed);
-    
-    if (sensorData.length > MAX_READINGS) {
-      sensorData.shift();
-    }
-    
-    console.log('✅ Stored reading from /data/report');
-  }
-  
-  res.status(200).send('success\n');
-});
-
-// Test endpoint - captures everything
-app.all('/weatherstation/updateweatherstation.php', (req, res) => {
-  console.log('📡 Wunderground endpoint hit!');
-  console.log('Method:', req.method);
-  console.log('Query:', JSON.stringify(req.query));
-  console.log('Body:', JSON.stringify(req.body));
-  
-  lastRawData = {
-    timestamp: new Date().toISOString(),
-    data: req.method === 'GET' ? req.query : req.body
-  };
-  
-  const parsed = parseEcowittData(req.method === 'GET' ? req.query : req.body);
-  
-  if (parsed.temperature !== undefined || 
-      parsed.soilMoisture1 !== null || 
-      parsed.soilMoisture2 !== null || 
-      parsed.leafWetness !== null) {
-    
-    sensorData.push(parsed);
-    
-    if (sensorData.length > MAX_READINGS) {
-      sensorData.shift();
-    }
-    
-    console.log('✅ Stored reading from Wunderground endpoint');
-  }
-  
-  res.status(200).send('success');
-});
-
-// Ecowitt Gateway webhook endpoint (supports both Ecowitt and Wunderground protocols)
-app.post('/api/ecowitt', (req, res) => {
-  try {
-    console.log('Received data:', JSON.stringify(req.body));
-    
-    lastRawData = {
-      timestamp: new Date().toISOString(),
-      data: req.body
-    };
-
-    const parsed = parseEcowittData(req.body);
-    
-    // Only store if we have actual sensor data
-    if (parsed.temperature !== undefined || 
-        parsed.soilMoisture1 !== null || 
-        parsed.soilMoisture2 !== null || 
-        parsed.leafWetness !== null) {
-      
-      sensorData.push(parsed);
-      
-      // Maintain data limit
-      if (sensorData.length > MAX_READINGS) {
-        sensorData.shift();
-      }
-      
-      console.log('✅ Stored reading:', {
-        temp: parsed.temperature,
-        soil1: parsed.soilMoisture1,
-        soil2: parsed.soilMoisture2,
-        leafWetness: parsed.leafWetness
-      });
-    } else {
-      console.log('⚠️ Received data but no sensor values found');
-    }
-    
-    // Return success response (works for both Ecowitt and Wunderground)
-    res.status(200).send('success');
-  } catch (error) {
-    console.error('❌ Error processing data:', error);
-    res.status(500).send('error');
-  }
-});
-
-// Also accept GET requests (some gateways send data via GET)
-app.get('/api/ecowitt', (req, res) => {
-  try {
-    console.log('Received GET data:', JSON.stringify(req.query));
-    
-    lastRawData = {
-      timestamp: new Date().toISOString(),
-      data: req.query
-    };
-
-    const parsed = parseEcowittData(req.query);
-    
-    if (parsed.temperature !== undefined || 
-        parsed.soilMoisture1 !== null || 
-        parsed.soilMoisture2 !== null || 
-        parsed.leafWetness !== null) {
-      
-      sensorData.push(parsed);
-      
-      if (sensorData.length > MAX_READINGS) {
-        sensorData.shift();
-      }
-      
-      console.log('✅ Stored reading from GET:', {
-        temp: parsed.temperature,
-        soil1: parsed.soilMoisture1,
-        soil2: parsed.soilMoisture2,
-        leafWetness: parsed.leafWetness
-      });
-    }
-    
-    res.status(200).send('success');
-  } catch (error) {
-    console.error('❌ Error processing GET data:', error);
-    res.status(500).send('error');
-  }
-});
-
-// Get latest reading
 app.get('/api/data/latest', (req, res) => {
   if (sensorData.length === 0) {
-    return res.status(404).json({
-      success: false,
-      message: 'No data available yet. Waiting for first sensor reading.'
+    return res.json({ 
+      success: false, 
+      message: 'No data available yet. Waiting for Ecowitt cloud sync.' 
     });
   }
-
+  
   const latest = sensorData[sensorData.length - 1];
   
   res.json({
@@ -441,19 +185,16 @@ app.get('/api/data/latest', (req, res) => {
   });
 });
 
-// Get historical data
 app.get('/api/data/history', (req, res) => {
   const { limit = 100, hours } = req.query;
   
   let filtered = [...sensorData];
   
-  // Filter by time if hours specified
   if (hours) {
     const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
     filtered = filtered.filter(r => new Date(r.timestamp) >= cutoffTime);
   }
   
-  // Apply limit (most recent)
   const limitNum = parseInt(limit);
   filtered = filtered.slice(-limitNum);
   
@@ -464,7 +205,6 @@ app.get('/api/data/history', (req, res) => {
   });
 });
 
-// Get statistics
 app.get('/api/data/stats', (req, res) => {
   const { hours = 24 } = req.query;
   
@@ -494,7 +234,6 @@ app.get('/api/data/stats', (req, res) => {
   res.json({ success: true, stats });
 });
 
-// Get alerts based on ideal vineyard conditions
 app.get('/api/alerts', (req, res) => {
   if (sensorData.length === 0) {
     return res.json({
@@ -508,14 +247,12 @@ app.get('/api/alerts', (req, res) => {
   const latest = sensorData[sensorData.length - 1];
   const alerts = [];
   
-  // Ideal ranges for wine grapes
   const ranges = {
     temperature: { min: 18, max: 25, critical: { min: 10, max: 35 } },
     soilMoisture: { min: 30, max: 60, critical: { min: 20, max: 80 } },
-    leafWetness: { max: 70, critical: { max: 85 } } // High leaf wetness = disease risk
+    leafWetness: { max: 70, critical: { max: 85 } }
   };
   
-  // Check temperature
   if (latest.temperature !== undefined) {
     const temp = latest.temperature;
     if (temp < ranges.temperature.critical.min || temp > ranges.temperature.critical.max) {
@@ -535,7 +272,6 @@ app.get('/api/alerts', (req, res) => {
     }
   }
   
-  // Check soil moisture sensors
   [1, 2].forEach(num => {
     const moisture = latest[`soilMoisture${num}`];
     if (moisture !== null && moisture !== undefined) {
@@ -557,7 +293,6 @@ app.get('/api/alerts', (req, res) => {
     }
   });
   
-  // Check leaf wetness (high = disease risk)
   if (latest.leafWetness !== null && latest.leafWetness !== undefined) {
     if (latest.leafWetness > ranges.leafWetness.critical.max) {
       alerts.push({
@@ -586,7 +321,6 @@ app.get('/api/alerts', (req, res) => {
   });
 });
 
-// Debug endpoint to see raw Ecowitt data
 app.get('/api/debug', (req, res) => {
   res.json({
     success: true,
@@ -596,28 +330,10 @@ app.get('/api/debug', (req, res) => {
   });
 });
 
-// Helper function for statistics
-function calculateStats(values) {
-  if (values.length === 0) return null;
-  
-  const sorted = values.sort((a, b) => a - b);
-  const sum = values.reduce((a, b) => a + b, 0);
-  
-  return {
-    min: sorted[0],
-    max: sorted[sorted.length - 1],
-    avg: sum / values.length,
-    median: sorted[Math.floor(sorted.length / 2)],
-    count: values.length
-  };
-}
-
-// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🍇 Ecowitt Vineyard API running on port ${PORT}`);
-  console.log(`📡 Ready to receive data from GW1200B!`);
-  console.log(`🔗 Ecowitt webhook: POST /api/ecowitt`);
+  console.log(`🍇 Knox Vineyards API running on port ${PORT}`);
+  console.log(`📡 Fetching from Ecowitt cloud every 60 seconds`);
 });
 
 module.exports = app;
